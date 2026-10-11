@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mi Procesador de Texto</title>
+<style>
+  :root { --bg:#f1f3f6; --ink:#1f2937; --muted:#6b7280; --line:#e5e7eb; --accent:#2563eb; --accent-soft:#e8efff; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:"Segoe UI",system-ui,sans-serif; display:flex; flex-direction:column; height:100vh; }
+
+  header { background:#fff; border-bottom:1px solid var(--line); padding:10px 18px; display:flex; align-items:center; gap:14px; }
+  .logo { width:32px; height:32px; border-radius:8px; background:var(--accent); color:#fff; font-weight:700; display:grid; place-items:center; }
+  #title { border:1px solid transparent; border-radius:6px; padding:6px 10px; font-size:16px; font-weight:600; width:300px; max-width:45vw; background:transparent; color:var(--ink); }
+  #title:hover { border-color:var(--line); } #title:focus { outline:none; border-color:var(--accent); background:#fff; }
+  .spacer { flex:1; }
+
+  .menu { position:relative; }
+  .btn-primary { background:var(--accent); color:#fff; border:0; border-radius:8px; padding:9px 16px; font-size:14px; font-weight:600; cursor:pointer; }
+  .btn-primary:hover { background:#1d4fd8; }
+  .btn-ghost { background:#fff; border:1px solid var(--line); border-radius:8px; padding:9px 14px; font-size:14px; cursor:pointer; color:var(--ink); }
+  .btn-ghost:hover { background:#f9fafb; }
+  .dropdown { display:none; position:absolute; right:0; top:calc(100% + 6px); background:#fff; border:1px solid var(--line); border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,.12); min-width:250px; padding:6px; z-index:20; }
+  .dropdown.open { display:block; }
+  .dropdown button { display:block; width:100%; text-align:left; background:none; border:0; padding:10px 12px; border-radius:7px; cursor:pointer; font-size:14px; color:var(--ink); }
+  .dropdown button:hover { background:var(--accent-soft); }
+  .dropdown small { display:block; color:var(--muted); font-size:12px; margin-top:2px; }
+
+  #toolbar { background:#fff; border-bottom:1px solid var(--line); padding:8px 18px; display:flex; flex-wrap:wrap; align-items:center; gap:4px; }
+  .sep { width:1px; height:24px; background:var(--line); margin:0 6px; }
+  .tb { width:34px; height:34px; border:0; background:none; border-radius:7px; cursor:pointer; display:grid; place-items:center; color:var(--ink); font-size:15px; }
+  .tb:hover { background:#f3f4f6; } .tb.active { background:var(--accent-soft); color:var(--accent); }
+  .tb svg { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+  select { height:34px; border:1px solid var(--line); border-radius:7px; background:#fff; padding:0 8px; font-size:14px; color:var(--ink); cursor:pointer; }
+  select:focus { outline:none; border-color:var(--accent); }
+
+  main { flex:1; overflow:auto; padding:28px 12px 60px; }
+  #page { background:#fff; width:21cm; max-width:100%; min-height:29.7cm; margin:0 auto; padding:2.54cm; box-shadow:0 1px 3px rgba(0,0,0,.1),0 8px 28px rgba(0,0,0,.08); border-radius:3px; outline:none;
+          font-family:Arial,sans-serif; font-size:11pt; line-height:1.15; color:#000; word-wrap:break-word; }
+  #page p { margin:0 0 6pt; } #page h1 { font-size:20pt; margin:0 0 6pt; } #page h2 { font-size:14pt; margin:0 0 6pt; }
+  #page ul, #page ol { margin:0 0 6pt; padding-left:1.27cm; }
+  #page.empty p:first-child::before { content:attr(data-ph); color:#a3a3a3; pointer-events:none; }
+  @media (max-width:800px){ #page { padding:1.5cm; } }
+
+  footer { background:#fff; border-top:1px solid var(--line); padding:6px 18px; font-size:12px; color:var(--muted); display:flex; gap:18px; }
+  @media print { header,#toolbar,footer { display:none; } main { padding:0; } #page { box-shadow:none; } }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">T</div>
+  <input id="title" value="Documento sin título" spellcheck="false">
+  <div class="spacer"></div>
+  <button class="btn-ghost" id="btnNew">Nuevo</button>
+  <div class="menu">
+    <button class="btn-primary" id="btnSave">Guardar ▾</button>
+    <div class="dropdown" id="saveMenu">
+      <button data-fmt="docx">Word (.docx)<small>Para Microsoft Word</small></button>
+      <button data-fmt="odt">LibreOffice (.odt)<small>Para LibreOffice Writer</small></button>
+      <button data-fmt="txt">Texto plano (.txt)<small>Sin formato</small></button>
+    </div>
+  </div>
+</header>
+
+<div id="toolbar"></div>
+
+<main>
+  <div id="page" contenteditable="true" spellcheck="true"></div>
+</main>
+
+<footer><span id="words">0 palabras</span><span id="chars">0 caracteres</span><span>Ctrl+S = guardar en Word</span></footer>
+
+<script>
+/* ========== Interfaz ========== */
+const page = document.getElementById('page');
+const toolbar = document.getElementById('toolbar');
+const FONTS = [['Arial','Arial (Sans)'],['Times New Roman','Times New Roman (Serif)'],['Courier New','Courier New (Mono)']];
+const SIZES = [8,9,10,11,12,14,16,18,24,36];
+
+const icons = {
+  undo:'<svg viewBox="0 0 24 24"><path d="M9 14L4 9l5-5"/><path d="M4 9h10a6 6 0 010 12h-3"/></svg>',
+  redo:'<svg viewBox="0 0 24 24"><path d="M15 14l5-5-5-5"/><path d="M20 9H10a6 6 0 000 12h3"/></svg>',
+  ul:'<svg viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/></svg>',
+  ol:'<svg viewBox="0 0 24 24"><path d="M10 6h10M10 12h10M10 18h10"/><path d="M4 5l1-1v4M3.5 13.5c0-1 2-1 2 0s-2 2-2 2.5h2M3.5 18.5h2l-1 1.2c1 0 1 1.3 0 1.3h-1"/></svg>'
+};
+function alignIcon(t){
+  const w = {left:[16,11,16,8],center:[16,10,16,8],right:[16,11,16,8],justify:[16,16,16,16]}[t];
+  let s='<svg viewBox="0 0 24 24">';
+  w.forEach((len,i)=>{ const y=5+i*5; const x = t==='center'?(24-len)/2 : t==='right'?22-len : 4; s+=`<path d="M${x} ${y}h${len}"/>`; });
+  return s+'</svg>';
+}
+
+toolbar.innerHTML = `
+  <button class="tb" data-cmd="undo" title="Deshacer">${icons.undo}</button>
+  <button class="tb" data-cmd="redo" title="Rehacer">${icons.redo}</button>
+  <div class="sep"></div>
+  <select id="selStyle" title="Estilo"><option value="p">Normal</option><option value="h1">Título</option><option value="h2">Subtítulo</option></select>
+  <select id="selFont" title="Fuente">${FONTS.map(f=>`<option value="${f[0]}">${f[1]}</option>`).join('')}</select>
+  <select id="selSize" title="Tamaño">${SIZES.map(s=>`<option value="${s}" ${s==11?'selected':''}>${s}</option>`).join('')}</select>
+  <div class="sep"></div>
+  <button class="tb" data-cmd="bold" title="Negrita (Ctrl+B)"><b>N</b></button>
+  <button class="tb" data-cmd="italic" title="Cursiva (Ctrl+I)"><i>K</i></button>
+  <button class="tb" data-cmd="underline" title="Subrayado (Ctrl+U)"><u>S</u></button>
+  <div class="sep"></div>
+  <button class="tb" data-cmd="justifyLeft" title="Izquierda">${alignIcon('left')}</button>
+  <button class="tb" data-cmd="justifyCenter" title="Centrar">${alignIcon('center')}</button>
+  <button class="tb" data-cmd="justifyRight" title="Derecha">${alignIcon('right')}</button>
+  <button class="tb" data-cmd="justifyFull" title="Justificar">${alignIcon('justify')}</button>
+  <div class="sep"></div>
+  <button class="tb" data-cmd="insertUnorderedList" title="Lista con viñetas">${icons.ul}</button>
+  <button class="tb" data-cmd="insertOrderedList" title="Lista numerada">${icons.ol}</button>
+`;
+
+let savedRange = null;
+document.addEventListener('selectionchange', () => {
+  const s = getSelection();
+  if (s.rangeCount && page.contains(s.anchorNode)) { savedRange = s.getRangeAt(0).cloneRange(); updateState(); }
+});
+function restore(){
+  page.focus();
+  if (savedRange){ const s=getSelection(); s.removeAllRanges(); s.addRange(savedRange); }
+}
+function exec(c, v=null){ restore(); document.execCommand(c, false, v); refresh(); }
+
+toolbar.querySelectorAll('.tb').forEach(b=>{
+  b.addEventListener('mousedown', e=>e.preventDefault());
+  b.addEventListener('click', ()=>exec(b.dataset.cmd));
+});
+document.getElementById('selFont').onchange = e => exec('fontName', e.target.value);
+document.getElementById('selStyle').onchange = e => exec('formatBlock', e.target.value);
+document.getElementById('selSize').onchange = e => {
+  restore();
+  document.execCommand('fontSize', false, '7');
+  page.querySelectorAll('span').forEach(sp => { if (sp.style.fontSize === 'xxx-large') sp.style.fontSize = e.target.value + 'pt'; });
+  page.querySelectorAll('font[size="7"]').forEach(f => { f.removeAttribute('size'); f.style.fontSize = e.target.value + 'pt'; });
+  refresh();
+};
+
+function updateState(){
+  toolbar.querySelectorAll('.tb[data-cmd]').forEach(b=>{
+    const c=b.dataset.cmd; if (c==='undo'||c==='redo') return;
+    let on=false; try{ on=document.queryCommandState(c); }catch(e){}
+    b.classList.toggle('active', on);
+  });
+  const s=getSelection(); if(!s.anchorNode) return;
+  const el = s.anchorNode.nodeType===3 ? s.anchorNode.parentElement : s.anchorNode;
+  if (!el || !page.contains(el) && el!==page) return;
+  const cs = getComputedStyle(el);
+  const fam = cs.fontFamily.toLowerCase();
+  const f = fam.includes('times') ? 'Times New Roman' : fam.includes('courier') ? 'Courier New' : 'Arial';
+  document.getElementById('selFont').value = f;
+  const pt = Math.round(parseFloat(cs.fontSize)*0.75);
+  const sel = document.getElementById('selSize'); if ([...sel.options].some(o=>o.value==pt)) sel.value = pt;
+  const blk = el.closest('h1,h2'); document.getElementById('selStyle').value = blk ? blk.tagName.toLowerCase() : 'p';
+}
+
+/* ========== Estado, contador y autoguardado ========== */
+function refresh(){
+  const txt = page.innerText.replace(/\u200b/g,'');
+  const words = (txt.trim().match(/\S+/g)||[]).length;
+  document.getElementById('words').textContent = words + (words===1?' palabra':' palabras');
+  document.getElementById('chars').textContent = txt.replace(/\n/g,'').length + ' caracteres';
+  page.classList.toggle('empty', !txt.trim() && !page.querySelector('li'));
+  localStorage.setItem('tp_doc', page.innerHTML);
+  localStorage.setItem('tp_title', document.getElementById('title').value);
+}
+function init(){
+  document.execCommand('styleWithCSS', false, true);
+  document.execCommand('defaultParagraphSeparator', false, 'p');
+}
+page.innerHTML = localStorage.getItem('tp_doc') || '<p data-ph="Empieza a escribir aquí…"><br></p>';
+document.getElementById('title').value = localStorage.getItem('tp_title') || 'Documento sin título';
+if (!page.firstElementChild) page.innerHTML = '<p><br></p>';
+if (page.firstElementChild) page.firstElementChild.setAttribute('data-ph','Empieza a escribir aquí…');
+page.addEventListener('input', ()=>{ page.firstElementChild && page.firstElementChild.setAttribute('data-ph','Empieza a escribir aquí…'); refresh(); });
+page.addEventListener('focus', init);
+document.getElementById('title').addEventListener('input', refresh);
+document.getElementById('btnNew').onclick = () => {
+  if (!confirm('¿Empezar un documento nuevo? Se borrará el actual.')) return;
+  page.innerHTML = '<p data-ph="Empieza a escribir aquí…"><br></p>';
+  document.getElementById('title').value = 'Documento sin título'; refresh(); page.focus();
+};
+init(); refresh();
+
+/* ========== Menú Guardar ========== */
+const menu = document.getElementById('saveMenu');
+document.getElementById('btnSave').onclick = e => { e.stopPropagation(); menu.classList.toggle('open'); };
+document.addEventListener('click', () => menu.classList.remove('open'));
+menu.querySelectorAll('button').forEach(b => b.onclick = () => { menu.classList.remove('open'); save(b.dataset.fmt); });
+document.addEventListener('keydown', e => { if ((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='s'){ e.preventDefault(); save('docx'); } });
+
+/* ========== Conversión del documento a párrafos con formato ========== */
+function parseDoc(root){
+  const paras=[], lists=[]; let inLI=0;
+  const mk=()=>({runs:[],align:'left',depth:0});
+  let cur=mk();
+  const flush=()=>{ if(cur.runs.length) paras.push(cur); cur=mk(); };
+  const BLOCK=/^(DIV|P|H1|H2|H3|LI|BLOCKQUOTE)$/;
+
+  function derive(el,f){
+    f={...f}; const t=el.tagName, st=el.style;
+    if(t==='B'||t==='STRONG') f.b=true;
+    if(t==='I'||t==='EM') f.i=true;
+    if(t==='U') f.u=true;
+    if(t==='H1'){ f.b=true; f.size=20; } if(t==='H2'){ f.b=true; f.size=14; }
+    if(t==='FONT' && el.getAttribute('face')) f.font=el.getAttribute('face');
+    if(st){
+      if(st.fontWeight==='bold'||parseInt(st.fontWeight)>=600) f.b=true;
+      else if(st.fontWeight==='normal'||st.fontWeight==='400') f.b=false;
+      if(st.fontStyle==='italic') f.i=true; else if(st.fontStyle==='normal') f.i=false;
+      const td=(st.textDecorationLine||st.textDecoration||''); if(td.includes('underline')) f.u=true;
+      if(st.fontFamily){ const n=st.fontFamily.split(',')[0].replace(/["']/g,'').trim(); if(n) f.font=n; }
+      if(st.fontSize){ const m=st.fontSize.match(/([\d.]+)(pt|px)/); if(m) f.size = m[2]==='pt'? +m[1] : +m[1]*0.75; }
+    }
+    return f;
+  }
+  function walk(node,f){
+    if(node.nodeType===3){
+      const text=node.nodeValue.replace(/\u00a0/g,' ').replace(/\u200b/g,'').replace(/[\r\n]+/g,' ');
+      if(!text) return;
+      if(/^\s*$/.test(text) && !cur.runs.length) return;
+      cur.runs.push({text,...f}); return;
+    }
+    if(node.nodeType!==1) return;
+    const t=node.tagName;
+    if(t==='BR'){
+      if(node.nextSibling===null && cur.runs.length) return;
+      paras.push(cur); const n=mk(); n.align=cur.align; n.depth=cur.depth; cur=n; return;
+    }
+    const nf=derive(node,f);
+    if(t==='UL'||t==='OL'){ flush(); lists.push({ordered:t==='OL',n:0}); [...node.childNodes].forEach(c=>walk(c,nf)); flush(); lists.pop(); return; }
+    const isBlock = BLOCK.test(t) && !(inLI && t!=='LI');
+    if(isBlock){
+      flush();
+      const al=(node.style.textAlign||node.getAttribute('align')||'').replace('start','left').replace('end','right');
+      if(['left','center','right','justify'].includes(al)) cur.align=al;
+      if(t==='LI'){
+        const L=lists[lists.length-1]||{ordered:false,n:0}; L.n++; cur.depth=Math.max(lists.length,1);
+        cur.runs.push({text:(L.ordered?L.n+'.':'•')+'\t',...nf,b:false,u:false}); inLI++;
+        [...node.childNodes].forEach(c=>walk(c,nf)); inLI--; flush(); return;
+      }
+    }
+    [...node.childNodes].forEach(c=>walk(c,nf));
+    if(isBlock) flush();
+  }
+  walk(root,{font:'Arial',size:11,b:false,i:false,u:false});
+  flush();
+  if(!paras.length) paras.push(mk());
+  return paras;
+}
+
+/* ========== Utilidades ========== */
+const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+const CRC=new Uint32Array(256).map((_,n)=>{let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;return c>>>0;});
+function crc32(b){let c=-1;for(let i=0;i<b.length;i++)c=CRC[(c^b[i])&255]^(c>>>8);return (c^-1)>>>0;}
+
+function makeZip(files,mime){
+  const enc=new TextEncoder(), parts=[], cd=[]; let off=0;
+  const d=new Date();
+  const dt=((d.getFullYear()-1980)<<9)|((d.getMonth()+1)<<5)|d.getDate();
+  const tm=(d.getHours()<<11)|(d.getMinutes()<<5)|(d.getSeconds()>>1);
+  for(const f of files){
+    const n=enc.encode(f.name), data=enc.encode(f.data), crc=crc32(data);
+    const h=new DataView(new ArrayBuffer(30));
+    h.setUint32(0,0x04034b50,true); h.setUint16(4,20,true); h.setUint16(6,0x0800,true); h.setUint16(8,0,true);
+    h.setUint16(10,tm,true); h.setUint16(12,dt,true); h.setUint32(14,crc,true);
+    h.setUint32(18,data.length,true); h.setUint32(22,data.length,true); h.setUint16(26,n.length,true); h.setUint16(28,0,true);
+    parts.push(new Uint8Array(h.buffer),n,data);
+    const c=new DataView(new ArrayBuffer(46));
+    c.setUint32(0,0x02014b50,true); c.setUint16(4,20,true); c.setUint16(6,20,true); c.setUint16(8,0x0800,true); c.setUint16(10,0,true);
+    c.setUint16(12,tm,true); c.setUint16(14,dt,true); c.setUint32(16,crc,true);
+    c.setUint32(20,data.length,true); c.setUint32(24,data.length,true); c.setUint16(28,n.length,true);
+    c.setUint32(42,off,true);
+    cd.push(new Uint8Array(c.buffer),n);
+    off+=30+n.length+data.length;
+  }
+  const cdSize=cd.reduce((s,x)=>s+x.length,0);
+  const e=new DataView(new ArrayBuffer(22));
+  e.setUint32(0,0x06054b50,true); e.setUint16(8,files.length,true); e.setUint16(10,files.length,true);
+  e.setUint32(12,cdSize,true); e.setUint32(16,off,true);
+  return new Blob([...parts,...cd,new Uint8Array(e.buffer)],{type:mime});
+}
+
+/* ========== Exportar a .docx ========== */
+function buildDocx(paras){
+  const jc={left:'left',center:'center',right:'right',justify:'both'};
+  const body=paras.map(p=>{
+    const ind = p.depth ? `<w:ind w:left="${720*p.depth}" w:hanging="360"/>` : '';
+    const runs=p.runs.map(r=>{
+      const rpr=`<w:rPr><w:rFonts w:ascii="${esc(r.font)}" w:hAnsi="${esc(r.font)}" w:cs="${esc(r.font)}"/>${r.b?'<w:b/>':''}${r.i?'<w:i/>':''}<w:sz w:val="${Math.round(r.size*2)}"/><w:szCs w:val="${Math.round(r.size*2)}"/>${r.u?'<w:u w:val="single"/>':''}</w:rPr>`;
+      const inner=r.text.split('\t').map(s=>s?`<w:t xml:space="preserve">${esc(s)}</w:t>`:'').join('<w:tab/>');
+      return `<w:r>${rpr}${inner}</w:r>`;
+    }).join('');
+    return `<w:p><w:pPr><w:spacing w:after="120" w:line="276" w:lineRule="auto"/>${ind}<w:jc w:val="${jc[p.align]}"/></w:pPr>${runs}</w:p>`;
+  }).join('');
+  const head='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+  return makeZip([
+    {name:'[Content_Types].xml', data:head+'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>'},
+    {name:'_rels/.rels', data:head+'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>'},
+    {name:'word/document.xml', data:head+`<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${body}<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr></w:body></w:document>`}
+  ],'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+}
+
+/* ========== Exportar a .odt ========== */
+function buildOdt(paras){
+  const ns='xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"';
+  const tStyles={}, pStyles={}; let tn=0, pn=0;
+  const al={left:'start',center:'center',right:'end',justify:'justify'};
+  const body=paras.map(p=>{
+    const pk=p.align+'|'+p.depth;
+    if(!pStyles[pk]){ pStyles[pk]={name:'P'+(++pn),p}; }
+    const runs=p.runs.map(r=>{
+      const k=[r.font,r.size,r.b,r.i,r.u].join('|');
+      if(!tStyles[k]){ tStyles[k]={name:'T'+(++tn),r}; }
+      let t=esc(r.text).replace(/ {2,}/g,m=>' <text:s text:c="'+(m.length-1)+'"/>').replace(/^ /,'<text:s/>').replace(/\t/g,'<text:tab/>');
+      return `<text:span text:style-name="${tStyles[k].name}">${t}</text:span>`;
+    }).join('');
+    return `<text:p text:style-name="${pStyles[pk].name}">${runs}</text:p>`;
+  }).join('');
+  const autoT=Object.values(tStyles).map(({name,r})=>`<style:style style:name="${name}" style:family="text"><style:text-properties fo:font-family="${esc(r.font)}" fo:font-size="${r.size}pt"${r.b?' fo:font-weight="bold"':''}${r.i?' fo:font-style="italic"':''}${r.u?' style:text-underline-style="solid" style:text-underline-width="auto" style:text-underline-color="font-color"':''}/></style:style>`).join('');
+  const autoP=Object.values(pStyles).map(({name,p})=>`<style:style style:name="${name}" style:family="paragraph"><style:paragraph-properties fo:text-align="${al[p.align]}" fo:margin-bottom="0.212cm" fo:line-height="115%"${p.depth?` fo:margin-left="${1.27*p.depth}cm" fo:text-indent="-0.635cm"`:''}/></style:style>`).join('');
+  const head='<?xml version="1.0" encoding="UTF-8"?>';
+  const MT='application/vnd.oasis.opendocument.text';
+  return makeZip([
+    {name:'mimetype', data:MT},
+    {name:'META-INF/manifest.xml', data:head+`<manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0" manifest:version="1.2"><manifest:file-entry manifest:full-path="/" manifest:version="1.2" manifest:media-type="${MT}"/><manifest:file-entry manifest:full-path="content.xml" manifest:media-type="text/xml"/><manifest:file-entry manifest:full-path="styles.xml" manifest:media-type="text/xml"/></manifest:manifest>`},
+    {name:'styles.xml', data:head+`<office:document-styles ${ns} office:version="1.2"><office:automatic-styles><style:page-layout style:name="pm1"><style:page-layout-properties fo:page-width="21cm" fo:page-height="29.7cm" fo:margin-top="2.54cm" fo:margin-bottom="2.54cm" fo:margin-left="2.54cm" fo:margin-right="2.54cm"/></style:page-layout></office:automatic-styles><office:master-styles><style:master-page style:name="Standard" style:page-layout-name="pm1"/></office:master-styles></office:document-styles>`},
+    {name:'content.xml', data:head+`<office:document-content ${ns} office:version="1.2"><office:automatic-styles>${autoT}${autoP}</office:automatic-styles><office:body><office:text>${body}</office:text></office:body></office:document-content>`}
+  ],MT);
+}
+
+/* ========== Guardar ========== */
+function download(blob,name){
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+}
+function save(fmt){
+  const name=(document.getElementById('title').value.replace(/[\\/:*?"<>|]+/g,'').trim()||'Documento');
+  const paras=parseDoc(page);
+  if(fmt==='docx') download(buildDocx(paras),name+'.docx');
+  else if(fmt==='odt') download(buildOdt(paras),name+'.odt');
+  else download(new Blob([paras.map(p=>p.runs.map(r=>r.text).join('').replace(/\t/g,' ')).join('\n')],{type:'text/plain;charset=utf-8'}),name+'.txt');
+}
+</script>
+</body>
+</html>
